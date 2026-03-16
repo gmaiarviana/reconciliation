@@ -39,3 +39,6 @@ coverage/
 .nuxt/
 .svelte-kit/
 *.tsbuildinfo
+
+# Archived / deprecated material
+deprecated/
