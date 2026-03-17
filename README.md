@@ -16,6 +16,39 @@ Pontos-chave:
 
 As decisões, contratos e regras completas permanecem registradas integralmente na seção técnica abaixo.
 
+---
+
+## Estrutura do Repositório
+
+```
+reconciliation/
+  logic.py                        ← lógica de negócio (parsers, conciliação, utilitários)
+  conciliacao_beneficios.ipynb    ← notebook do Colab (interface do analista)
+  README.md
+  .gitignore
+```
+
+### Separação de responsabilidades
+
+| Arquivo | O que contém | Quem edita |
+|---|---|---|
+| `logic.py` | Parsers, `conciliar()`, `PARSERS`, constantes | Desenvolvedor — versionado aqui |
+| `notebook` | Células de UI (widgets, upload, display) | Desenvolvedor — atualizado manualmente após sync |
+
+O notebook nunca muda a lógica diretamente. A Célula 2 contém o conteúdo do `logic.py` colado manualmente.
+
+### Fluxo de atualização
+
+Quando a lógica muda:
+
+1. Editar `logic.py` no repositório
+2. Colar o conteúdo atualizado na **Célula 2** do notebook no Colab
+3. Atualizar o comentário de sync no topo da célula: `# logic.py · sync: AAAA-MM-DD`
+
+Esse marcador é a forma de confirmar que o notebook está rodando a versão correta da lógica.
+
+---
+
 ## Registro Técnico — Notebook de Conciliação de Benefícios
 
 Instituto Atlântico | Março 2026
@@ -96,9 +129,9 @@ Cada fornecedor é representado por uma função `parse_fatura_<nome>(conteudo: 
 
 ```python
 PARSERS = {
-	("bradesco", "dental"): parse_fatura_bradesco_dental,
-	# ("unimed",):           parse_fatura_unimed,
-	# ("uniodonto",):        parse_fatura_uniodonto,
+    ("bradesco", "dental"): parse_fatura_bradesco_dental,
+    # ("unimed",):           parse_fatura_unimed,
+    # ("uniodonto",):        parse_fatura_uniodonto,
 }
 ```
 
@@ -146,6 +179,8 @@ O fluxo de upload, identificação, conciliação e exibição de resultado não
 | Código oculto no Colab | `#@title` + `display-mode: form` | Reduz ruído e risco de edição acidental pelo analista. |
 | Upload por arquivo | Botão repetível + confirmação explícita | Arquivos podem estar em diretórios diferentes na máquina do analista. |
 | Export opcional | `checkbox exportar_excel` | Download automático é intrusivo; o analista decide quando exportar. |
+| Separação logic/notebook | `logic.py` versionado no GitHub | Permite diff legível, edição cirúrgica e reaproveitamento nas fases seguintes. |
+| Sync manual | Conteúdo colado na Célula 2 | Elimina dependência de autenticação GitHub no Colab; fricção controlada por convenção de marcador de data. |
 
 ## 6. O que será reaproveitado nas próximas fases
 
