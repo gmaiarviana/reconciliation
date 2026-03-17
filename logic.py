@@ -87,6 +87,59 @@ def parse_fatura_bradesco_dental(conteudo):
     ).reset_index()
 
 
+def parse_fatura_bradesco_saude(conteudo):
+    """
+        Parser da fatura mensal do Bradesco Saúde.
+
+    Estrutura esperada:
+      · Aba: bradesco
+            · Cabeçalho localizado dinamicamente pela presença de 'Matricula Titular'
+      · Uma linha por vida (titular e dependentes)
+      · Colunas lidas: Matricula Titular, DESCONTO COLABORADOR, Custo
+            · Agrega por matrícula antes de retornar
+    """
+    wb = openpyxl.load_workbook(io.BytesIO(conteudo), data_only=True)
+    ws = wb["bradesco"]
+
+    header_row = None
+    for i, row in enumerate(ws.iter_rows(values_only=True)):
+        if any(str(v).strip().lower() == "matricula titular" for v in row if v):
+            header_row = i
+            break
+    if header_row is None:
+        raise ValueError("Coluna 'Matricula Titular' não encontrada na aba 'bradesco'.")
+
+    headers = list(ws.iter_rows(values_only=True))[header_row]
+    idx = {}
+    for i, h in enumerate(headers):
+        h_norm = str(h).strip().lower() if h else ""
+        if h_norm == "matricula titular":
+            idx["mat"] = i
+        elif h_norm == "desconto colaborador":
+            idx["desconto"] = i
+        elif h_norm in ["x", "custo"] and "custo" not in idx:
+            idx["custo"] = i
+
+    registros = []
+    for row in list(ws.iter_rows(values_only=True))[header_row + 2:]:
+        mat   = row[idx["mat"]]      if "mat"      in idx else None
+        desc  = row[idx["desconto"]] if "desconto" in idx else None
+        custo = row[idx["custo"]]    if "custo"    in idx else None
+        if mat and isinstance(mat, (int, float)) and desc:
+            registros.append({
+                "matricula":       int(mat),
+                "desconto_fatura": float(desc),
+                "custo_fatura":    float(custo) if custo else 0.0,
+            })
+
+    df = pd.DataFrame(registros)
+    return df.groupby("matricula").agg(
+        desconto_fatura=("desconto_fatura", "sum"),
+        custo_fatura=("custo_fatura", "sum"),
+        qtd_vidas=("matricula", "count"),
+    ).reset_index()
+
+
 def parse_fatura_unimed(conteudo):
     """
     Parser da fatura mensal da Unimed.
@@ -152,6 +205,7 @@ def parse_fatura_unimed(conteudo):
 #
 PARSERS = {
     ("bradesco", "dental"): parse_fatura_bradesco_dental,
+    ("bradesco", "saude"):  parse_fatura_bradesco_saude,
     ("unimed",):            parse_fatura_unimed,
     # ("uniodonto",):        parse_fatura_uniodonto,
 }
@@ -161,6 +215,7 @@ PARSERS = {
 # Ao adicionar um fornecedor em PARSERS, adicione o label correspondente aqui.
 FORNECEDOR_LABELS = {
     ("bradesco", "dental"): "bradesco dental",
+    ("bradesco", "saude"):  "bradesco sa",
     ("unimed",):            "unimed",
     # ("uniodonto",):        "uniodonto",
 }
