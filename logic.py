@@ -87,6 +87,63 @@ def parse_fatura_bradesco_dental(conteudo):
     ).reset_index()
 
 
+def parse_fatura_unimed(conteudo):
+    """
+    Parser da fatura mensal da Unimed.
+
+    Estrutura esperada:
+      · Aba: unimed
+      · Cabeçalho localizado dinamicamente pela presença de 'Matricula Titular'
+      · Uma linha por vida (titular e dependentes)
+      · Colunas lidas: Matricula Titular, DESCONTO COLABORADOR, CUSTO ATLANTICO
+      · Agrega por matrícula antes de retornar
+    """
+    wb = openpyxl.load_workbook(io.BytesIO(conteudo), data_only=True)
+    ws = wb["unimed"]
+
+    header_row = None
+    for i, row in enumerate(ws.iter_rows(values_only=True)):
+        if any(str(v).strip().lower() == "matricula titular" for v in row if v):
+            header_row = i
+            break
+    if header_row is None:
+        raise ValueError("Coluna 'Matricula Titular' não encontrada na aba 'unimed'.")
+
+    headers = list(ws.iter_rows(values_only=True))[header_row]
+    idx = {}
+    for i, h in enumerate(headers):
+        h_norm = str(h).strip().lower() if h else ""
+        if h_norm == "matricula titular":
+            idx["mat"] = i
+        elif h_norm == "desconto colaborador":
+            idx["desconto"] = i
+        elif h_norm == "custo atlantico":
+            idx["custo"] = i
+
+    missing = [k for k in ("mat", "desconto", "custo") if k not in idx]
+    if missing:
+        raise ValueError(f"Colunas não encontradas na aba 'unimed': {missing}")
+
+    registros = []
+    for row in list(ws.iter_rows(values_only=True))[header_row + 1:]:
+        mat   = row[idx["mat"]]
+        desc  = row[idx["desconto"]]
+        custo = row[idx["custo"]]
+        if mat and isinstance(mat, (int, float)) and isinstance(desc, (int, float)):
+            registros.append({
+                "matricula":       int(mat),
+                "desconto_fatura": float(desc),
+                "custo_fatura":    float(custo) if isinstance(custo, (int, float)) else 0.0,
+            })
+
+    df = pd.DataFrame(registros)
+    return df.groupby("matricula").agg(
+        desconto_fatura=("desconto_fatura", "sum"),
+        custo_fatura=("custo_fatura", "sum"),
+        qtd_vidas=("matricula", "count"),
+    ).reset_index()
+
+
 # ── Registro de fornecedores ──────────────────────────────────────────────────
 #
 # Chave: tupla de substrings que devem estar presentes no nome do arquivo
@@ -95,7 +152,7 @@ def parse_fatura_bradesco_dental(conteudo):
 #
 PARSERS = {
     ("bradesco", "dental"): parse_fatura_bradesco_dental,
-    # ("unimed",):           parse_fatura_unimed,
+    ("unimed",):            parse_fatura_unimed,
     # ("uniodonto",):        parse_fatura_uniodonto,
 }
 
@@ -104,7 +161,7 @@ PARSERS = {
 # Ao adicionar um fornecedor em PARSERS, adicione o label correspondente aqui.
 FORNECEDOR_LABELS = {
     ("bradesco", "dental"): "bradesco dental",
-    # ("unimed",):           "unimed",
+    ("unimed",):            "unimed",
     # ("uniodonto",):        "uniodonto",
 }
 
@@ -141,7 +198,6 @@ def parse_referencia_interna(conteudo, fornecedor_label):
     idx_mat = idx_nome = idx_fatura = idx_desconto = idx_custo = None
     idx_bd_start = header1_row = header2_row = None
 
-    # Localizar linha de cabeçalho 1 (onde estão 'Mat', 'Nome' e o nome do fornecedor)
     for i, row in enumerate(rows):
         vals = [str(v).strip().lower() if v else "" for v in row]
         if "mat" in vals and "nome" in vals:
@@ -161,8 +217,6 @@ def parse_referencia_interna(conteudo, fornecedor_label):
             f"na aba 'total'. Verifique se o nome bate com o cabeçalho da planilha."
         )
 
-    # Localizar Fatura / Desconto / Custo APENAS dentro do bloco do fornecedor.
-    # Varre no máximo 10 colunas a partir de idx_bd_start e para ao encontrar os três.
     subheaders = rows[header2_row]
     for j in range(idx_bd_start, min(idx_bd_start + 10, len(subheaders))):
         v = subheaders[j]
@@ -175,7 +229,7 @@ def parse_referencia_interna(conteudo, fornecedor_label):
             idx_desconto = j
         elif "custo" in v_low and idx_desconto is not None and idx_custo is None:
             idx_custo = j
-            break  # encontrou os três — para aqui
+            break
 
     if None in (idx_fatura, idx_desconto, idx_custo):
         raise ValueError(
